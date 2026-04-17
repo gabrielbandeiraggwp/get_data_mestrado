@@ -1,4 +1,5 @@
 library(rbcb)
+#library(BCB)
 library(GetBCBData)
 library(dplyr)
 library(ggplot2)
@@ -8,6 +9,7 @@ library(gridExtra)
 library(purrr)
 library(lubridate)
 library(mFilter)
+library(tidyverse)
 
 
 
@@ -25,18 +27,38 @@ rm(list = ls())
   #end_date = "2020-12-30"#
 #)
 
+meta_inflacao <- gbcbd_get_series(13521, first.date = "2000-01-01", last.date = "2024-12-31")
 IBC <- gbcbd_get_series(24363, first.date = "2000-01-01", last.date = "2020-12-31") # disponivel apenas a partir de  2003
 DIVIDA_LIQUIDA <- gbcbd_get_series(4468, first.date = "2000-01-01", last.date = "2020-12-31")
-PIB <- gbcbd_get_series(4380, first.date = "2000-01-01", last.date = "2020-12-31")
+PIB <- gbcbd_get_series(4380, first.date = "2000-01-01", last.date = "2024-12-31")
 SELIC <- gbcbd_get_series(432, first.date = "2000-01-01", last.date = "2020-12-31")
 CAMBIO <- gbcbd_get_series(1, first.date = "2000-01-01", last.date = "2020-12-31")
-IPCA <- gbcbd_get_series(433, first.date = "2000-01-01", last.date = "2020-12-31")
+IPCA <- gbcbd_get_series(433, first.date = "2000-01-01", last.date = "2024-12-31")
 EMBI <- ipeadatar::ipeadata("JPM366_EMBI366")
 EXPECTATIVA_INFLACAO <- get_market_expectations(type = "monthly", indicator = "IPCA")
 #filtrar apenas o ipca e vou escolher a base 0 (antiga metodologia de calculo a nova so tem a partir de  2014)
-EXPECTATIVA_INFLACAO <- EXPECTATIVA_INFLACAO  %>% filter(Indicador == "IPCA", baseCalculo == 0 )%>% select(Indicador,DataReferencia,Data,Media, numeroRespondentes, baseCalculo)%>% mutate(DataReferencia = as.Date(paste0("01/", DataReferencia),format = "%d/%m/%Y")) %>% rename(expectativa_ipca_media = Media, ref.date = DataReferencia ) %>% group_by(ref.date)%>% summarise(expectativa_ipca_media = mean(expectativa_ipca_media, na.rm = TRUE))%>% filter(ref.date > "2000-01-01", ref.date < "2020-12-31") 
+EXPECTATIVA_INFLACAO <- EXPECTATIVA_INFLACAO  %>% filter(
+  Indicador == "IPCA", baseCalculo == 0 ,Data > "2000-01-01", Data < "2020-12-31")%>% select(
+    Indicador,DataReferencia,Data,Media, numeroRespondentes, baseCalculo)%>% mutate(
+      DataReferencia = as.Date(paste0("01/", DataReferencia),format = "%d/%m/%Y")) %>% rename(
+        expectativa_ipca_media = Media, ref.date = DataReferencia ) %>% group_by(
+          ref.date, Data)%>% summarise(
+            expectativa_ipca_media = mean(
+              expectativa_ipca_media, na.rm = TRUE))
 
 #cambio e selic não tem dia 1, -> dar um groupby para media
+meta_inflacao <- meta_inflacao %>% rename(meta_inflacao = value
+) %>% select(meta_inflacao, ref.date
+) %>% mutate(ano = year(ref.date)
+) %>% crossing(mes = 1:12
+) %>% mutate(data = as.Date(paste(ano, mes, "01", sep = "-"))
+) %>% arrange(data
+) %>% select(data,  meta_anual = meta_inflacao
+) %>% mutate(meta_inflacao_mensal = ((1 + meta_anual/100)^(1/12) - 1) * 100)
+
+inflacao_menos_meta <- data.frame(desvio_da_meta = IPCA$value - meta_inflacao$meta_inflacao_mensal, data = IPCA$ref.date)
+
+
 IBC <- IBC %>% rename(IBC = value) %>% select("IBC", "ref.date") %>% filter(format(ref.date, "%d") == "01")
 DIVIDA_LIQUIDA <- DIVIDA_LIQUIDA %>% rename(DIVIDA_LIQUIDA = value) %>% select("DIVIDA_LIQUIDA", "ref.date") %>% filter(format(ref.date, "%d") == "01") 
 PIB <- PIB %>% rename(PIB = value) %>% select("PIB", "ref.date")%>% filter(format(ref.date, "%d") == "01")
@@ -62,6 +84,7 @@ CAMBIO <- CAMBIO %>% rename(CAMBIO = value) %>%
   group_by(ref.date) %>%
   summarise(CAMBIO_media = mean(CAMBIO, na.rm = TRUE))
 
+
 lista_dfs <- list(IBC,DIVIDA_LIQUIDA,PIB,SELIC,CAMBIO,IPCA,EMBI, EXPECTATIVA_INFLACAO)
 dados_completos <- reduce(lista_dfs, inner_join, by= "ref.date")
 
@@ -70,10 +93,12 @@ dados_completos <- reduce(lista_dfs, inner_join, by= "ref.date")
 #################################################################
 
 lambda = 14400 # vi que usam esse lambda +para dados mensais
-filtro_hp <- hpfilter(dados_completos$PIB, freq = lambda)
-dados_completos$tendencia_PIB <- filtro_hp$trend
-dados_completos$ciclo_PIB <- filtro_hp$cycle
-dados_completos$hiato <- dados_completos$tendencia_PIB - dados_completos$ciclo_PIB
+filtro_hp <- hpfilter(PIB$PIB, freq = lambda)
+#dados_completos$tendencia_PIB <- filtro_hp$trend
+#dados_completos$ciclo_PIB <- filtro_hp$cycle
+#dados_completos$hiato <- dados_completos$tendencia_PIB - dados_completos$ciclo_PIB
+hiato <- as.data.frame(filtro_hp$cycle)%>% rename(hiato = `filtro_hp$cycle`)
+
 #################################################################
 # parte dos graficos#
 #################################################################
@@ -113,27 +138,27 @@ ggplot(data = dados_completos, mapping = aes(x = ref.date, y = expectativa_ipca_
   geom_line( col = "turquoise4") +
   labs(title = "Média mensal da expectativa do IPCA (FOCUS) : 2003 - 2020", x = "Data", y = "EMBI")
 
-ggplot(dados_completos, aes(x = ref.date)) +
-  geom_line(aes(y = PIB, color = "PIB")) +
-  geom_line(aes(y = tendencia_PIB, color = "Tendência (HP)")) +
-  labs(title = "PIB vs Tendência (Filtro HP) : 2003 - 2020",
-       y = "PIB", x = "Data")
+#ggplot(dados_completos, aes(x = ref.date)) +
+ # geom_line(aes(y = PIB, color = "PIB")) +
+ # geom_line(aes(y = tendencia_PIB, color = "Tendência (HP)")) +
+ # labs(title = "PIB vs Tendência (Filtro HP) : 2003 - 2020",
+     #  y = "PIB", x = "Data")
 
-ggplot(dados_completos, aes(x = ref.date)) +
-  geom_line(aes(y = tendencia_PIB, color = "Tendência (HP)")) +
-  geom_line(aes(y = ciclo_PIB, color = "Ciclo")) +
-  labs(title = "Ciclo vs Tendência do PIB (Filtro HP) : 2003 - 2020",
-       y = "PIB", x = "Data")
+#ggplot(dados_completos, aes(x = ref.date)) +
+  #geom_line(aes(y = tendencia_PIB, color = "Tendência (HP)")) +
+  #geom_line(aes(y = ciclo_PIB, color = "Ciclo")) +
+  #labs(title = "Ciclo vs Tendência do PIB (Filtro HP) : 2003 - 2020",
+     #  y = "PIB", x = "Data")
 
-ggplot(data = dados_completos, mapping = aes(x = ref.date, y = hiato))+
-  geom_line( col = "turquoise4") +
-  labs(title = "Hiato do PIB (filtro hp): 2003 - 2020", x = "Data", y = "Hiato")
+#ggplot(data = dados_completos, mapping = aes(x = ref.date, y = hiato))+
+  #geom_line( col = "turquoise4") +
+  #labs(title = "Hiato do PIB (filtro hp): 2003 - 2020", x = "Data", y = "Hiato")
 
-ggplot(dados_completos, aes(x = ref.date)) +
-  geom_line(aes(y = PIB, color = "PIB")) +
-  geom_line(aes(y = hiato, color = "hiato")) +
-  labs(title = "PIB vs Hiato do PIB (Filtro HP) : 2003 - 2020",
-       y = "PIB", x = "Data")
+#ggplot(dados_completos, aes(x = ref.date)) +
+  #geom_line(aes(y = PIB, color = "PIB")) +
+ # geom_line(aes(y = hiato, color = "hiato")) +
+  #labs(title = "PIB vs Hiato do PIB (Filtro HP) : 2003 - 2020",
+   #    y = "PIB", x = "Data")
 
 
 
