@@ -14,7 +14,7 @@ acf(desvio_inflacao_dataframe$desvios, plot = TRUE)
 pacf(desvio_inflacao_dataframe$desvios, plot = TRUE)
 
 #teste adf e kpss para hiato do produto
-ggplot(data= hiato, mapping = aes(x = seq_along(hiato), y =hiato))+
+ggplot(data= hiato_percentual, mapping = aes(x = seq_along(hiato), y =hiato))+
   geom_line(color = "turquoise4") +
   labs(title = "Hiato : 2003 - 2024", y = "HIATO")
 adf_hiato <- ur.df(hiato_percentual$hiato, type =c("drift"), lags = 6, selectlags = "AIC")
@@ -29,7 +29,7 @@ pacf(hiato_percentual$hiato, plot = TRUE)
 ggplot(data= CAMBIO, mapping = aes(x = ref.date, y = retorno_cambio))+
   geom_line(color = "turquoise4") +
   labs(title = "Taxa de câmbio - Livre - Dólar americano (compra) ", y = "Fim de período - mensal : 2003 - 2024")
-adf_cambio <- ur.df(CAMBIO$retorno_cambio, type =c("drift"), lags = 6, selectlags = "AIC")
+adf_cambio <- ur.df(CAMBIO$retorno_cambio, type =c("none"), lags = 6, selectlags = "AIC")
 kpss_cambio <- ur.kpss(CAMBIO$retorno_cambio, type = "mu", lags = "long") #obs^o tau é equvalente a "trend"
 summary(adf_cambio)
 summary(kpss_cambio) 
@@ -53,7 +53,7 @@ pacf(EMBI$EMBI_media, plot = TRUE)
 ggplot(data= DIVIDA_LIQUIDA, mapping = aes(x = ref.date, y = variacao_percentual))+
   geom_line(color = "turquoise4") +
   labs(title = "Dívida Líquida : 2003 - 2024", y = "Divida Líquida")
-adf_divida <- ur.df(DIVIDA_LIQUIDA$variacao_percentual, type =c("trend"), lags = 6, selectlags = "AIC")
+adf_divida <- ur.df(DIVIDA_LIQUIDA$variacao_percentual, type =c("drift"), lags = 6, selectlags = "AIC")
 kpss_divida <- ur.kpss(DIVIDA_LIQUIDA$variacao_percentual, type = "mu", lags = "long") #obs^o tau é equvalente a "trend"
 summary(adf_divida) #aparentemente estacionaria
 summary(kpss_divida) #estacionaria

@@ -97,7 +97,9 @@ EMBI <- EMBI %>% rename(EMBI = value, ref.date = date) %>%
   select("EMBI", "ref.date") %>% 
   mutate(ref.date = floor_date(ref.date, "month")) %>%
   group_by(ref.date) %>%
-  summarise(EMBI_media= mean(EMBI, na.rm = TRUE))
+  summarise(EMBI_media= mean(EMBI, na.rm = TRUE)) %>%
+  filter(ref.date >= "2003-01-01")
+  
 
 PIB_INDUSTRIAL <- PIB_INDUSTRIAL %>% rename(PIB_INDUSTRIAL = value, ref.date = date) %>%
   select("PIB_INDUSTRIAL", "ref.date") %>% 
@@ -120,7 +122,7 @@ SELIC <- SELIC %>% filter(format(SELIC$ref.date,"%d") == "01") %>% rename(SELIC 
 CAMBIO <- CAMBIO %>%
   mutate(
    retorno_cambio = ((value / lag(value)) - 1)*100
-  ) %>% filter(!is.na(retorno_cambio))
+  ) %>% filter(!is.na(retorno_cambio), ref.date >= "2003-01-01",ref.date < "2025-01-01" )
 
 #juros real -> Taxa Real = (1 + Taxa Selic Mensal) / (1 + IPCA Mensal) - 1
 SELIC <- SELIC %>% mutate(
