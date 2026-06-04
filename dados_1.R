@@ -19,11 +19,12 @@ rm(list = ls())
 
 meta_inflacao <- gbcbd_get_series(13521, first.date = "2003-01-01", last.date = "2025-12-31")
 IBC <- gbcbd_get_series(24363, first.date = "2003-01-01", last.date = "2024-12-31") # disponivel apenas a partir de  2003
-DIVIDA_LIQUIDA <- gbcbd_get_series(4468, first.date = "2002-01-01", last.date = "2024-12-31")
-PIB <- gbcbd_get_series(4380, first.date = "2002-01-01", last.date = "2024-12-31")
-SELIC <- gbcbd_get_series(432, first.date = "2003-01-01", last.date = "2024-12-31")
-CAMBIO <- gbcbd_get_series(3695, first.date = "2002-09-01", last.date = "2024-12-31")
+DIVIDA_LIQUIDA <- gbcbd_get_series(4468, first.date = "2003-01-01", last.date = "2024-12-31") # Dívida Líquida do Setor Público - Saldos em R$ milhões - Total - Governo Federal e Banco Central - R$ (milhões)
+PIB <- gbcbd_get_series(4380, first.date = "2003-01-01", last.date = "2024-12-31")
+SELIC <- gbcbd_get_series(432, first.date = "2002-12-01", last.date = "2024-12-31")
+CAMBIO <- gbcbd_get_series(3695, first.date = "2003-01-01", last.date = "2024-12-31")
 IPCA <- gbcbd_get_series(433, first.date = "2003-01-01", last.date = "2024-12-31")
+COMODITIES <- gbcbd_get_series(27574,first.date = "2003-01-01", last.date = "2024-12-31" ) #O Índice exprime média mensal ponderada dos preços em reais das commodities relevantes para a dinâmica da inflação brasileira.
 PIB_INDUSTRIAL <-  ipeadatar::ipeadata("PAN12_QIIGG12")
 EMBI <- ipeadatar::ipeadata("JPM366_EMBI366")
 EXPECTATIVA_INFLACAO <- get_market_expectations(type = "monthly", indic  = "IPCA", start_date = "2003-01-01",
@@ -70,18 +71,7 @@ desvio_inflacao_dataframe <- left_join(EXPECTATIVA_INFLACAO, meta_inflacao, by =
 desvio_inflacao_dataframe <- desvio_inflacao_dataframe %>% mutate(desvios = Media - meta_inflacao_mensal)
 
 DIVIDA_LIQUIDA <- DIVIDA_LIQUIDA %>% rename(DIVIDA_LIQUIDA = value) %>% select("DIVIDA_LIQUIDA", "ref.date") %>% filter(format(ref.date, "%d") == "01")
-DIVIDA_LIQUIDA <- DIVIDA_LIQUIDA %>%
-  mutate(
-    ano = year(ref.date),
-    mes = month(ref.date),
-    # Calcular a dívida do mesmo mês no ano anterior
-    divida_ano_anterior = lag(DIVIDA_LIQUIDA, 12),  # 12 meses atrás
-    # Calcular a variação em pontos percentuais
-    variacao_pp = DIVIDA_LIQUIDA - divida_ano_anterior,
-    # Calcular a variação percentual
-    variacao_percentual = (DIVIDA_LIQUIDA / divida_ano_anterior - 1) * 100
-  ) %>%
-  filter(!is.na(variacao_pp))  # Remover os primeiros 12 meses sem dado anterior
+
 
 
 
@@ -105,12 +95,17 @@ PIB_INDUSTRIAL <- PIB_INDUSTRIAL %>% rename(PIB_INDUSTRIAL = value, ref.date = d
   select("PIB_INDUSTRIAL", "ref.date") %>% 
   mutate(ref.date = floor_date(ref.date, "month")) %>% filter(ref.date >= "2003-01-01",ref.date < "2025-01-01" )
 
-SELIC <- SELIC %>% filter(format(SELIC$ref.date,"%d") == "01") %>% rename(SELIC = value) %>% select("SELIC", "ref.date")
-#SELIC <- SELIC %>% rename(SELIC = value) %>% #nao sei se é a melhor opção
-  #select("SELIC", "ref.date") %>%
-  #mutate(ref.date = floor_date(ref.date, "month")) %>%
-  #group_by(ref.date) %>%
-  #summarise(SELIC_media = mean(SELIC, na.rm =TRUE))
+#SELIC <- SELIC %>% filter(format(SELIC$ref.date,"%d") == "01") %>% rename(SELIC = value) %>% select("SELIC", "ref.date")
+SELIC <- SELIC %>% rename(SELIC = value) %>% #nao sei se é a melhor opção
+  select("SELIC", "ref.date") %>%
+  mutate(ref.date = floor_date(ref.date, "month")) %>%
+  group_by(ref.date) %>%
+  slice_min(order_by = ref.date, n= 1 ) %>%
+  ungroup() %>%
+  select(ref.date, SELIC) %>%
+  distinct(ref.date, .keep_all = TRUE)
+
+SELIC <- SELIC %>% mutate(SELIC_defasado = lag(SELIC, n= 1)) %>% drop_na() 
 
 
 #CAMBIO <- CAMBIO %>% rename(CAMBIO = value) %>%
@@ -119,20 +114,17 @@ SELIC <- SELIC %>% filter(format(SELIC$ref.date,"%d") == "01") %>% rename(SELIC 
  # group_by(ref.date) %>%
  # summarise(CAMBIO_media = mean(CAMBIO, na.rm = TRUE))
 
-CAMBIO <- CAMBIO %>%
-  mutate(
-   retorno_cambio = ((value / lag(value)) - 1)*100
-  ) %>% filter(!is.na(retorno_cambio), ref.date >= "2003-01-01",ref.date < "2025-01-01" )
+CAMBIO <- CAMBIO %>% filter(ref.date >= "2003-01-01",ref.date < "2025-01-01" )
 
 #juros real -> Taxa Real = (1 + Taxa Selic Mensal) / (1 + IPCA Mensal) - 1
-SELIC <- SELIC %>% mutate(
-  selic_fator = 1 + SELIC/100
-)
-IPCA <- IPCA %>% mutate(
-  ipca_fator = 1 + IPCA/100
-)
-SELIC <- SELIC %>% mutate(
-  selic_real = (selic_fator / IPCA$ipca_fator)-1)
+#SELIC <- SELIC %>% mutate(
+#  selic_fator = 1 + SELIC/100
+#)
+#IPCA <- IPCA %>% mutate(
+#  ipca_fator = 1 + IPCA/100
+#)
+#SELIC <- SELIC %>% mutate(
+#  selic_real = (selic_fator / IPCA$ipca_fator)-1)
 
 
 #lista_dfs <- list(IBC,DIVIDA_LIQUIDA,PIB,SELIC,CAMBIO,IPCA,EMBI, EXPECTATIVA_INFLACAO)
@@ -143,52 +135,52 @@ SELIC <- SELIC %>% mutate(
 #################################################################
 
 lambda = 14400 # vi que usam esse lambda +para dados mensais
-filtro_hp <- hpfilter(PIB_INDUSTRIAL$PIB_INDUSTRIAL, freq = lambda)
+filtro_hp <- hpfilter(IBC$IBC, freq = lambda)
 
 #dados_completos$tendencia_PIB <- filtro_hp$trend
 #dados_completos$ciclo_PIB <- filtro_hp$cycle
 #dados_completos$hiato <- dados_completos$tendencia_PIB - dados_completos$ciclo_PIB
 hiato <- as.data.frame(filtro_hp$cycle)%>% rename(hiato = `filtro_hp$cycle`) 
-hiato_percentual = hiato$hiato / as.data.frame(filtro_hp$trend) %>% rename(hiato = V1)
+#hiato_percentual = hiato$hiato / as.data.frame(filtro_hp$trend) %>% rename(hiato = V1)
 
 #################################################################
 # parte dos graficos#
 #################################################################
 
-ggplot(data = dados_completos, mapping = aes(x = ref.date, y = IBC))+
-  geom_line( col = "turquoise4") +
-  labs(title = "IBC: 2003 - 2024", x = "Data", y = "IBC")
+#ggplot(data = dados_completos, mapping = aes(x = ref.date, y = IBC))+
+#  geom_line( col = "turquoise4") +
+#  labs(title = "IBC: 2003 - 2024", x = "Data", y = "IBC")
 
-ggplot(data = dados_completos, mapping = aes(x = ref.date, y = DIVIDA_LIQUIDA))+
-  geom_line( col = "turquoise4") +
-  labs(title = "DIVIDA LÍQUIDA: 2003 - 2024", x = "Data", y = "DIVIDA LÍQUIDA")
+#ggplot(data = dados_completos, mapping = aes(x = ref.date, y = DIVIDA_LIQUIDA))+
+#  geom_line( col = "turquoise4") +
+#  labs(title = "DIVIDA LÍQUIDA: 2003 - 2024", x = "Data", y = "DIVIDA LÍQUIDA")
 
-ggplot(data = dados_completos, mapping = aes(x = ref.date, y = PIB))+
-  geom_line( col = "turquoise4") +
-  labs(title = "PIB: 2003 - 2024", x = "Data", y = "PIB")
+#ggplot(data = dados_completos, mapping = aes(x = ref.date, y = PIB))+
+#  geom_line( col = "turquoise4") +
+#  labs(title = "PIB: 2003 - 2024", x = "Data", y = "PIB")
 
-ggplot(data = dados_completos, mapping = aes(x = ref.date, y = SELIC))+
-  geom_line( col = "turquoise4") +
-  labs(title = "SELIC: 2003 - 2024", x = "Data", y = "SELIC")
-
-
-ggplot(data = dados_completos, mapping = aes(x = ref.date, y = CAMBIO_media))+
-  geom_line( col = "turquoise4") +
-  labs(title = "Média mensal do cambio : 2003 - 2024", x = "Data", y = "CAMBIO")
+#ggplot(data = dados_completos, mapping = aes(x = ref.date, y = SELIC))+
+#  geom_line( col = "turquoise4") +
+#  labs(title = "SELIC: 2003 - 2024", x = "Data", y = "SELIC")
 
 
+#ggplot(data = dados_completos, mapping = aes(x = ref.date, y = CAMBIO_media))+
+#  geom_line( col = "turquoise4") +
+#  labs(title = "Média mensal do cambio : 2003 - 2024", x = "Data", y = "CAMBIO")
 
-ggplot(data = dados_completos, mapping = aes(x = ref.date, y = IPCA))+
-  geom_line( col = "turquoise4") +
-  labs(title = "IPCA : 2003 - 2024", x = "Data", y = "IPCA")
 
-ggplot(data = dados_completos, mapping = aes(x = ref.date, y = EMBI_media))+
-  geom_line( col = "turquoise4") +
-  labs(title = "Média mensal do EMBI : 2003 - 2024", x = "Data", y = "EMBI")
 
-ggplot(data = dados_completos, mapping = aes(x = ref.date, y = expectativa_ipca_media))+
-  geom_line( col = "turquoise4") +
-  labs(title = "Média mensal da expectativa do IPCA (FOCUS) : 2003 - 2024", x = "Data", y = "EMBI")
+#ggplot(data = dados_completos, mapping = aes(x = ref.date, y = IPCA))+
+#  geom_line( col = "turquoise4") +
+#  labs(title = "IPCA : 2003 - 2024", x = "Data", y = "IPCA")
+
+#ggplot(data = dados_completos, mapping = aes(x = ref.date, y = EMBI_media))+
+#  geom_line( col = "turquoise4") +
+#  labs(title = "Média mensal do EMBI : 2003 - 2024", x = "Data", y = "EMBI")
+
+#ggplot(data = dados_completos, mapping = aes(x = ref.date, y = expectativa_ipca_media))+
+#  geom_line( col = "turquoise4") +
+#  labs(title = "Média mensal da expectativa do IPCA (FOCUS) : 2003 - 2024", x = "Data", y = "EMBI")
 
 
 
