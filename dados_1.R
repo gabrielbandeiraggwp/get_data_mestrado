@@ -44,7 +44,7 @@ EXPECTATIVA_INFLACAO <- EXPECTATIVA_INFLACAO %>% mutate(#aqui eu criei uma janel
   DataReferencia = my(DataReferencia),
   Diff_meses = (year(Data) - year(DataReferencia))*12 +
     (month(Data) - month(DataReferencia))
-) %>% filter(abs(Diff_meses) == 12)
+) %>% filter(Diff_meses == -12)
 
 EXPECTATIVA_INFLACAO <- EXPECTATIVA_INFLACAO %>% 
   mutate(
